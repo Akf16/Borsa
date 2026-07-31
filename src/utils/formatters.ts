@@ -1,5 +1,13 @@
 import type { TradingPair, SignalDirection, RSIStatus, MACDTrend, SMACross, VolumePressure } from '../types';
 
+export function formatCryptoPrice(price: number, decimals: number): string {
+  const formatted = price.toLocaleString('tr-TR', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  return `${formatted} USDT`;
+}
+
 export function formatPrice(price: number, pair: TradingPair): string {
   const formatted = price.toLocaleString('tr-TR', {
     minimumFractionDigits: pair.decimals,

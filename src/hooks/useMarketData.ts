@@ -1,16 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { TRADING_PAIRS, BASE_PRICES, TROY_OZ_TO_GRAM } from '../data/pairs';
-import type { MarketSnapshot, ConnectionStatus, PriceData } from '../types';
+import { MAJOR_COINS, MAJOR_COIN_BASE_PRICES } from '../data/majorCoins';
+import type { MarketSnapshot, MajorCoinSnapshot, ConnectionStatus, PriceData } from '../types';
+import { generateIndicators, generateSignal } from '../utils/signalEngine';
 import {
-  generateIndicators,
-  generateSignal,
-} from '../utils/signalEngine';
-import {
-  fetchBinanceTickers,
+  fetchAllTickers24hr,
   parseTicker,
   BINANCE_POLL_INTERVAL_MS,
   type BinanceTicker24hr,
 } from '../services/binanceApi';
+import { getVerifiedUsdtSymbols, buildAllCryptoSnapshots } from '../services/binanceCoins';
 import { saveSnapshotsToSupabase } from '../services/supabaseSync';
 import { isSupabaseConfigured } from '../lib/supabase';
 
@@ -99,9 +98,8 @@ function mapBinanceToPairs(tickers: Map<string, BinanceTicker24hr>): Record<stri
   }
 
   if (paxg && usdtTry) {
-    const gramPrice = paxg.price / TROY_OZ_TO_GRAM;
     result['gram-tl'] = {
-      price: gramPrice * usdtTry.price,
+      price: (paxg.price / TROY_OZ_TO_GRAM) * usdtTry.price,
       change24h: combineChange(paxg.change24h, usdtTry.change24h),
       high24h: (paxg.high24h / TROY_OZ_TO_GRAM) * usdtTry.high24h,
       low24h: (paxg.low24h / TROY_OZ_TO_GRAM) * usdtTry.low24h,
@@ -109,6 +107,42 @@ function mapBinanceToPairs(tickers: Map<string, BinanceTicker24hr>): Record<stri
   }
 
   return result;
+}
+
+function mapBinanceToMajorCoins(tickers: Map<string, BinanceTicker24hr>): MajorCoinSnapshot[] {
+  return MAJOR_COINS.map((coin) => {
+    const ticker = tickers.get(coin.binanceSymbol);
+    const base = MAJOR_COIN_BASE_PRICES[coin.id];
+
+    const data = ticker
+      ? parseTicker(ticker)
+      : {
+          price: base,
+          change24h: 0,
+          high24h: base * 1.01,
+          low24h: base * 0.99,
+          volume: undefined,
+        };
+
+    return {
+      coin: {
+        id: coin.id,
+        symbol: coin.symbol,
+        name: coin.name,
+        label: coin.label,
+        icon: coin.icon,
+        decimals: coin.decimals,
+      },
+      price: {
+        price: data.price,
+        change24h: data.change24h,
+        high24h: data.high24h,
+        low24h: data.low24h,
+        volume: data.volume,
+        lastUpdate: new Date(),
+      },
+    };
+  });
 }
 
 export function useMarketData() {
@@ -125,9 +159,29 @@ export function useMarketData() {
     return initial;
   });
 
+  const [allCryptoSnapshots, setAllCryptoSnapshots] = useState<MarketSnapshot[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const [selectedPairId, setSelectedPairId] = useState('btc-usdt');
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
+  const [majorCoins, setMajorCoins] = useState<MajorCoinSnapshot[]>(() =>
+    MAJOR_COINS.map((coin) => ({
+      coin: {
+        id: coin.id,
+        symbol: coin.symbol,
+        name: coin.name,
+        label: coin.label,
+        icon: coin.icon,
+        decimals: coin.decimals,
+      },
+      price: {
+        price: MAJOR_COIN_BASE_PRICES[coin.id],
+        change24h: 0,
+        high24h: MAJOR_COIN_BASE_PRICES[coin.id] * 1.01,
+        low24h: MAJOR_COIN_BASE_PRICES[coin.id] * 0.99,
+        lastUpdate: new Date(),
+      },
+    })),
+  );
   const isFetchingRef = useRef(false);
 
   const refreshFromBinance = useCallback(async () => {
@@ -136,8 +190,17 @@ export function useMarketData() {
     setConnectionStatus('analyzing');
 
     try {
-      const tickers = await fetchBinanceTickers();
+      const [tickers, usdtSymbols] = await Promise.all([
+        fetchAllTickers24hr(),
+        getVerifiedUsdtSymbols(),
+      ]);
+
       const mapped = mapBinanceToPairs(tickers);
+      const coins = mapBinanceToMajorCoins(tickers);
+      const allCrypto = buildAllCryptoSnapshots(usdtSymbols, tickers);
+
+      setMajorCoins(coins);
+      setAllCryptoSnapshots(allCrypto);
 
       const next: Record<string, MarketSnapshot> = {};
       TRADING_PAIRS.forEach((pair) => {
@@ -177,6 +240,7 @@ export function useMarketData() {
 
   return {
     snapshots,
+    allCryptoSnapshots,
     selectedSnapshot,
     selectedPairId,
     setSelectedPairId,
@@ -184,6 +248,7 @@ export function useMarketData() {
     lastFetchTime,
     pollIntervalSeconds: BINANCE_POLL_INTERVAL_MS / 1000,
     supabaseConfigured: isSupabaseConfigured,
+    majorCoins,
     allPairs: TRADING_PAIRS,
   };
 }

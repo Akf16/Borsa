@@ -60,3 +60,15 @@ export interface MarketSnapshot {
   signal: AISignal;
   indicators: Indicators;
 }
+
+export interface MajorCoinSnapshot {
+  coin: {
+    id: string;
+    symbol: string;
+    name: string;
+    label: string;
+    icon: string;
+    decimals: number;
+  };
+  price: PriceData;
+}

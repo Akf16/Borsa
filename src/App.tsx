@@ -4,11 +4,11 @@ import { LivePriceCard } from './components/LivePriceCard';
 import { AISignalCard } from './components/AISignalCard';
 import { IndicatorGrid } from './components/IndicatorGrid';
 import { MarketWatchTable } from './components/MarketWatchTable';
+import { MajorCoinsPanel } from './components/MajorCoinsPanel';
 import { useMarketData } from './hooks/useMarketData';
 
 function App() {
   const {
-    snapshots,
     selectedSnapshot,
     selectedPairId,
     setSelectedPairId,
@@ -16,6 +16,8 @@ function App() {
     lastFetchTime,
     pollIntervalSeconds,
     supabaseConfigured,
+    majorCoins,
+    allCryptoSnapshots,
     allPairs,
   } = useMarketData();
 
@@ -50,11 +52,10 @@ function App() {
 
         <IndicatorGrid indicators={selectedSnapshot.indicators} />
 
-        <MarketWatchTable
-          snapshots={snapshots}
-          selectedId={selectedPairId}
-          onSelect={setSelectedPairId}
-        />
+        <div className="space-y-5">
+          <MarketWatchTable snapshots={allCryptoSnapshots} />
+          <MajorCoinsPanel coins={majorCoins} />
+        </div>
       </main>
 
       <footer className="border-t border-border py-4 text-center text-xs text-text-muted">

@@ -5,9 +5,10 @@ export interface BinanceTicker24hr {
   highPrice: string;
   lowPrice: string;
   volume: string;
+  quoteVolume: string;
 }
 
-export const BINANCE_TICKER_SYMBOLS = [
+export const BINANCE_MARKET_SYMBOLS = [
   'BTCUSDT',
   'BTCJPY',
   'EURUSDT',
@@ -20,9 +21,8 @@ export const BINANCE_POLL_INTERVAL_MS = 15_000;
 
 const BINANCE_API = 'https://api.binance.com/api/v3/ticker/24hr';
 
-export async function fetchBinanceTickers(): Promise<Map<string, BinanceTicker24hr>> {
-  const symbols = JSON.stringify([...BINANCE_TICKER_SYMBOLS]);
-  const response = await fetch(`${BINANCE_API}?symbols=${encodeURIComponent(symbols)}`);
+export async function fetchAllTickers24hr(): Promise<Map<string, BinanceTicker24hr>> {
+  const response = await fetch(BINANCE_API);
 
   if (!response.ok) {
     throw new Error(`Binance API hatası: ${response.status}`);
@@ -39,5 +39,6 @@ export function parseTicker(ticker: BinanceTicker24hr) {
     high24h: parseFloat(ticker.highPrice),
     low24h: parseFloat(ticker.lowPrice),
     volume: parseFloat(ticker.volume),
+    quoteVolume: parseFloat(ticker.quoteVolume),
   };
 }
