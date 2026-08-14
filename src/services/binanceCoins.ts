@@ -3,6 +3,7 @@ import type { BinanceTicker24hr } from './binanceApi';
 import { parseTicker } from './binanceApi';
 import { generateIndicators, generateSignal } from '../utils/signalEngine';
 import { getDecimalsForPrice } from '../utils/decimals';
+import { BINANCE_API_BASE } from '../config/api';
 
 export interface BinanceSymbolInfo {
   symbol: string;
@@ -24,7 +25,7 @@ let cachedUsdtSymbols: BinanceSymbolInfo[] | null = null;
 export async function getVerifiedUsdtSymbols(): Promise<BinanceSymbolInfo[]> {
   if (cachedUsdtSymbols) return cachedUsdtSymbols;
 
-  const response = await fetch('https://api.binance.com/api/v3/exchangeInfo');
+  const response = await fetch(`${BINANCE_API_BASE}/v3/exchangeInfo`);
   if (!response.ok) throw new Error('Binance exchangeInfo hatası');
 
   const data = await response.json();

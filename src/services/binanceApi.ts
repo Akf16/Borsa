@@ -1,3 +1,5 @@
+import { BINANCE_API_BASE } from '../config/api';
+
 export interface BinanceTicker24hr {
   symbol: string;
   lastPrice: string;
@@ -19,10 +21,8 @@ export const BINANCE_MARKET_SYMBOLS = [
 
 export const BINANCE_POLL_INTERVAL_MS = 15_000;
 
-const BINANCE_API = 'https://api.binance.com/api/v3/ticker/24hr';
-
 export async function fetchAllTickers24hr(): Promise<Map<string, BinanceTicker24hr>> {
-  const response = await fetch(BINANCE_API);
+  const response = await fetch(`${BINANCE_API_BASE}/v3/ticker/24hr`);
 
   if (!response.ok) {
     throw new Error(`Binance API hatası: ${response.status}`);
