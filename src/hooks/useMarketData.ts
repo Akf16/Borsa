@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type Dispatch, type SetStateAction } from 'react';
 import { TRADING_PAIRS, BASE_PRICES, TROY_OZ_TO_GRAM } from '../data/pairs';
-import { MAJOR_COINS, MAJOR_COIN_BASE_PRICES, MAJOR_COIN_BINANCE_SYMBOLS } from '../data/majorCoins';
+import { MAJOR_COINS, MAJOR_COIN_BASE_PRICES } from '../data/majorCoins';
 import type { MarketSnapshot, MajorCoinSnapshot, ConnectionStatus, PriceData } from '../types';
 import { generateIndicators, generateSignal } from '../utils/signalEngine';
 import {
   fetchTickersForSymbols,
   parseTicker,
-  BINANCE_POLL_INTERVAL_MS,
-  BINANCE_MARKET_SYMBOLS,
+  BINANCE_FAST_POLL_MS,
+  BINANCE_FULL_POLL_MS,
+  PRIORITY_BINANCE_SYMBOLS,
+  mergeTickerMaps,
   type BinanceTicker24hr,
 } from '../services/binanceApi';
 import {
@@ -150,6 +152,37 @@ function mapBinanceToMajorCoins(tickers: Map<string, BinanceTicker24hr>): MajorC
   });
 }
 
+function applyTickerUpdates(
+  tickers: Map<string, BinanceTicker24hr>,
+  usdtSymbols: Awaited<ReturnType<typeof getVerifiedUsdtSymbols>> | null,
+  setSnapshots: Dispatch<SetStateAction<Record<string, MarketSnapshot>>>,
+  setMajorCoins: Dispatch<SetStateAction<MajorCoinSnapshot[]>>,
+  setAllCryptoSnapshots: Dispatch<SetStateAction<MarketSnapshot[]>>,
+) {
+  const mapped = mapBinanceToPairs(tickers);
+  const coins = mapBinanceToMajorCoins(tickers);
+
+  setMajorCoins(coins);
+
+  if (usdtSymbols) {
+    setAllCryptoSnapshots(buildAllCryptoSnapshots(usdtSymbols, tickers));
+  }
+
+  const next: Record<string, MarketSnapshot> = {};
+  TRADING_PAIRS.forEach((pair) => {
+    const data = mapped[pair.id];
+    if (data) {
+      next[pair.id] = buildSnapshot(pair.id, data, Date.now() + pair.id.length);
+    }
+  });
+
+  if (Object.keys(next).length > 0) {
+    setSnapshots((prev) => ({ ...prev, ...next }));
+  }
+
+  return next;
+}
+
 export function useMarketData() {
   const [snapshots, setSnapshots] = useState<Record<string, MarketSnapshot>>(() => {
     const initial: Record<string, MarketSnapshot> = {};
@@ -188,57 +221,70 @@ export function useMarketData() {
       },
     })),
   );
-  const isFetchingRef = useRef(false);
+
+  const tickerCacheRef = useRef<Map<string, BinanceTicker24hr>>(new Map());
+  const usdtSymbolsRef = useRef<Awaited<ReturnType<typeof getVerifiedUsdtSymbols>> | null>(null);
+  const isFastFetchingRef = useRef(false);
+  const isFullFetchingRef = useRef(false);
   const hasLiveDataRef = useRef(false);
 
-  const refreshFromBinance = useCallback(async () => {
-    if (isFetchingRef.current) return;
-    isFetchingRef.current = true;
+  const refreshPriority = useCallback(async () => {
+    if (isFastFetchingRef.current) return;
+    isFastFetchingRef.current = true;
     setConnectionStatus(hasLiveDataRef.current ? 'analyzing' : 'connecting');
 
     try {
+      const tickers = await fetchTickersForSymbols([...PRIORITY_BINANCE_SYMBOLS]);
+      tickerCacheRef.current = mergeTickerMaps(tickerCacheRef.current, tickers);
+
+      applyTickerUpdates(
+        tickerCacheRef.current,
+        usdtSymbolsRef.current,
+        setSnapshots,
+        setMajorCoins,
+        setAllCryptoSnapshots,
+      );
+
+      hasLiveDataRef.current = true;
+      setFetchError(null);
+      setLastFetchTime(new Date());
+      setConnectionStatus('connected');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Bilinmeyen hata';
+      setFetchError(message);
+      setConnectionStatus('error');
+      console.error('[Binance fast]', message);
+    } finally {
+      isFastFetchingRef.current = false;
+    }
+  }, []);
+
+  const refreshFull = useCallback(async () => {
+    if (isFullFetchingRef.current) return;
+    isFullFetchingRef.current = true;
+
+    try {
       const usdtSymbols = await getVerifiedUsdtSymbols();
-      const symbolList = [
-        ...new Set([
-          ...collectAllBinanceSymbols(usdtSymbols),
-          ...BINANCE_MARKET_SYMBOLS,
-          ...MAJOR_COIN_BINANCE_SYMBOLS,
-        ]),
-      ];
+      usdtSymbolsRef.current = usdtSymbols;
 
+      const symbolList = collectAllBinanceSymbols(usdtSymbols);
       const tickers = await fetchTickersForSymbols(symbolList);
+      tickerCacheRef.current = mergeTickerMaps(tickerCacheRef.current, tickers);
 
-      if (tickers.size === 0) {
-        throw new Error('Binance ticker verisi boş döndü');
-      }
+      const next = applyTickerUpdates(
+        tickerCacheRef.current,
+        usdtSymbols,
+        setSnapshots,
+        setMajorCoins,
+        setAllCryptoSnapshots,
+      );
 
-      const mapped = mapBinanceToPairs(tickers);
-      const coins = mapBinanceToMajorCoins(tickers);
-      const allCrypto = buildAllCryptoSnapshots(usdtSymbols, tickers);
-
-      setMajorCoins(coins);
-      setAllCryptoSnapshots(allCrypto);
-
-      const next: Record<string, MarketSnapshot> = {};
-      TRADING_PAIRS.forEach((pair) => {
-        const data = mapped[pair.id];
-        if (data) {
-          next[pair.id] = buildSnapshot(pair.id, data, Date.now() + pair.id.length);
-        }
-      });
-
-      if (Object.keys(next).length === 0) {
-        throw new Error('Ana parite verileri alınamadı');
-      }
-
-      let merged: Record<string, MarketSnapshot> = {};
-      setSnapshots((prev) => {
-        merged = { ...prev, ...next };
-        return merged;
-      });
-
-      if (isSupabaseConfigured) {
-        saveSnapshotsToSupabase(merged).catch(() => {});
+      if (isSupabaseConfigured && Object.keys(next).length > 0) {
+        setSnapshots((prev) => {
+          const merged = { ...prev, ...next };
+          saveSnapshotsToSupabase(merged).catch(() => {});
+          return merged;
+        });
       }
 
       hasLiveDataRef.current = true;
@@ -249,18 +295,24 @@ export function useMarketData() {
       const message = error instanceof Error ? error.message : 'Bilinmeyen hata';
       setFetchError(message);
       setConnectionStatus('error');
-      console.error('[Binance]', message);
+      console.error('[Binance full]', message);
     } finally {
-      isFetchingRef.current = false;
+      isFullFetchingRef.current = false;
     }
   }, []);
 
   useEffect(() => {
-    refreshFromBinance();
+    refreshFull();
+    refreshPriority();
 
-    const interval = setInterval(refreshFromBinance, BINANCE_POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [refreshFromBinance]);
+    const fastInterval = setInterval(refreshPriority, BINANCE_FAST_POLL_MS);
+    const fullInterval = setInterval(refreshFull, BINANCE_FULL_POLL_MS);
+
+    return () => {
+      clearInterval(fastInterval);
+      clearInterval(fullInterval);
+    };
+  }, [refreshPriority, refreshFull]);
 
   const selectedSnapshot = snapshots[selectedPairId];
 
@@ -273,7 +325,8 @@ export function useMarketData() {
     connectionStatus,
     fetchError,
     lastFetchTime,
-    pollIntervalSeconds: BINANCE_POLL_INTERVAL_MS / 1000,
+    pollIntervalSeconds: BINANCE_FAST_POLL_MS / 1000,
+    fullPollIntervalSeconds: BINANCE_FULL_POLL_MS / 1000,
     supabaseConfigured: isSupabaseConfigured,
     majorCoins,
     allPairs: TRADING_PAIRS,

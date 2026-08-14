@@ -15,6 +15,7 @@ function App() {
     connectionStatus,
     lastFetchTime,
     pollIntervalSeconds,
+    fullPollIntervalSeconds,
     supabaseConfigured,
     fetchError,
     majorCoins,
@@ -36,6 +37,7 @@ function App() {
         connectionStatus={connectionStatus}
         lastFetchTime={lastFetchTime}
         pollIntervalSeconds={pollIntervalSeconds}
+        fullPollIntervalSeconds={fullPollIntervalSeconds}
         supabaseConfigured={supabaseConfigured}
         fetchError={fetchError}
       />
@@ -61,7 +63,7 @@ function App() {
       </main>
 
       <footer className="border-t border-border py-4 text-center text-xs text-text-muted">
-        Global Yapay Zeka Al-Sat Sinyal & Piyasa Takip Dashboard · Binance API · 15 saniyede bir güncellenir
+        Global Yapay Zeka Al-Sat Sinyal & Piyasa Takip Dashboard · Binance API · 2sn / 20sn güncelleme
       </footer>
     </div>
   );

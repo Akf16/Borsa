@@ -5,6 +5,7 @@ interface HeaderProps {
   connectionStatus: ConnectionStatus;
   lastFetchTime: Date | null;
   pollIntervalSeconds: number;
+  fullPollIntervalSeconds?: number;
   supabaseConfigured: boolean;
   fetchError: string | null;
 }
@@ -21,6 +22,7 @@ export function Header({
   connectionStatus,
   lastFetchTime,
   pollIntervalSeconds,
+  fullPollIntervalSeconds,
   supabaseConfigured,
   fetchError,
 }: HeaderProps) {
@@ -67,7 +69,9 @@ export function Header({
             </div>
             <span className="hidden text-xs text-text-secondary lg:inline">
               {fetchError ?? STATUS_MESSAGES[connectionStatus]}
-              {lastFetchTime && <> · Binance {pollIntervalSeconds}sn</>}
+              {lastFetchTime && (
+                <> · Binance {pollIntervalSeconds}sn{fullPollIntervalSeconds ? ` / ${fullPollIntervalSeconds}sn` : ''}</>
+              )}
               {supabaseConfigured && <> · Supabase ✓</>}
             </span>
           </div>

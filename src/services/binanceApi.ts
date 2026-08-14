@@ -1,3 +1,4 @@
+import { MAJOR_COIN_BINANCE_SYMBOLS } from '../data/majorCoins';
 import { BINANCE_API_BASE } from '../config/api';
 
 export interface BinanceTicker24hr {
@@ -19,7 +20,17 @@ export const BINANCE_MARKET_SYMBOLS = [
   'PAXGUSDT',
 ] as const;
 
-export const BINANCE_POLL_INTERVAL_MS = 15_000;
+/** Ana pariteler + majör coinler — hızlı yenileme */
+export const BINANCE_FAST_POLL_MS = 2_000;
+
+/** 475+ coin tablosu — Binance rate limit (1200 weight/dk) için güvenli aralık */
+export const BINANCE_FULL_POLL_MS = 20_000;
+
+export const BINANCE_POLL_INTERVAL_MS = BINANCE_FAST_POLL_MS;
+
+export const PRIORITY_BINANCE_SYMBOLS = [
+  ...new Set([...BINANCE_MARKET_SYMBOLS, ...MAJOR_COIN_BINANCE_SYMBOLS]),
+];
 
 const CHUNK_SIZE = 80;
 
@@ -65,4 +76,13 @@ export function parseTicker(ticker: BinanceTicker24hr) {
     volume: parseFloat(ticker.volume),
     quoteVolume: parseFloat(ticker.quoteVolume),
   };
+}
+
+export function mergeTickerMaps(
+  base: Map<string, BinanceTicker24hr>,
+  incoming: Map<string, BinanceTicker24hr>,
+): Map<string, BinanceTicker24hr> {
+  const merged = new Map(base);
+  incoming.forEach((value, key) => merged.set(key, value));
+  return merged;
 }
