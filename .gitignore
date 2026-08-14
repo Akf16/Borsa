@@ -13,6 +13,9 @@ dist
 dist-ssr
 *.local
 
+# Removed FastAPI project (local artifacts)
+bet365_analyzer/
+
 # Logs
 logs
 *.log
