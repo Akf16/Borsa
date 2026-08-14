@@ -16,6 +16,7 @@ function App() {
     lastFetchTime,
     pollIntervalSeconds,
     supabaseConfigured,
+    fetchError,
     majorCoins,
     allCryptoSnapshots,
     allPairs,
@@ -36,6 +37,7 @@ function App() {
         lastFetchTime={lastFetchTime}
         pollIntervalSeconds={pollIntervalSeconds}
         supabaseConfigured={supabaseConfigured}
+        fetchError={fetchError}
       />
 
       <AssetSelector

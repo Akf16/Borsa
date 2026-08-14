@@ -10,7 +10,7 @@ export type SMACross = 'golden' | 'death' | 'none';
 
 export type VolumePressure = 'buy' | 'sell' | 'neutral';
 
-export type ConnectionStatus = 'connected' | 'connecting' | 'analyzing' | 'waiting';
+export type ConnectionStatus = 'connected' | 'connecting' | 'analyzing' | 'waiting' | 'error';
 
 export interface TradingPair {
   id: string;

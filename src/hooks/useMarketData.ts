@@ -1,15 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { TRADING_PAIRS, BASE_PRICES, TROY_OZ_TO_GRAM } from '../data/pairs';
-import { MAJOR_COINS, MAJOR_COIN_BASE_PRICES } from '../data/majorCoins';
+import { MAJOR_COINS, MAJOR_COIN_BASE_PRICES, MAJOR_COIN_BINANCE_SYMBOLS } from '../data/majorCoins';
 import type { MarketSnapshot, MajorCoinSnapshot, ConnectionStatus, PriceData } from '../types';
 import { generateIndicators, generateSignal } from '../utils/signalEngine';
 import {
-  fetchAllTickers24hr,
+  fetchTickersForSymbols,
   parseTicker,
   BINANCE_POLL_INTERVAL_MS,
+  BINANCE_MARKET_SYMBOLS,
   type BinanceTicker24hr,
 } from '../services/binanceApi';
-import { getVerifiedUsdtSymbols, buildAllCryptoSnapshots } from '../services/binanceCoins';
+import {
+  getVerifiedUsdtSymbols,
+  buildAllCryptoSnapshots,
+  collectAllBinanceSymbols,
+} from '../services/binanceCoins';
 import { saveSnapshotsToSupabase } from '../services/supabaseSync';
 import { isSupabaseConfigured } from '../lib/supabase';
 
@@ -161,6 +166,7 @@ export function useMarketData() {
 
   const [allCryptoSnapshots, setAllCryptoSnapshots] = useState<MarketSnapshot[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedPairId, setSelectedPairId] = useState('btc-usdt');
   const [lastFetchTime, setLastFetchTime] = useState<Date | null>(null);
   const [majorCoins, setMajorCoins] = useState<MajorCoinSnapshot[]>(() =>
@@ -183,17 +189,28 @@ export function useMarketData() {
     })),
   );
   const isFetchingRef = useRef(false);
+  const hasLiveDataRef = useRef(false);
 
   const refreshFromBinance = useCallback(async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
-    setConnectionStatus('analyzing');
+    setConnectionStatus(hasLiveDataRef.current ? 'analyzing' : 'connecting');
 
     try {
-      const [tickers, usdtSymbols] = await Promise.all([
-        fetchAllTickers24hr(),
-        getVerifiedUsdtSymbols(),
-      ]);
+      const usdtSymbols = await getVerifiedUsdtSymbols();
+      const symbolList = [
+        ...new Set([
+          ...collectAllBinanceSymbols(usdtSymbols),
+          ...BINANCE_MARKET_SYMBOLS,
+          ...MAJOR_COIN_BINANCE_SYMBOLS,
+        ]),
+      ];
+
+      const tickers = await fetchTickersForSymbols(symbolList);
+
+      if (tickers.size === 0) {
+        throw new Error('Binance ticker verisi boş döndü');
+      }
 
       const mapped = mapBinanceToPairs(tickers);
       const coins = mapBinanceToMajorCoins(tickers);
@@ -210,20 +227,29 @@ export function useMarketData() {
         }
       });
 
+      if (Object.keys(next).length === 0) {
+        throw new Error('Ana parite verileri alınamadı');
+      }
+
       let merged: Record<string, MarketSnapshot> = {};
       setSnapshots((prev) => {
         merged = { ...prev, ...next };
         return merged;
       });
 
-      if (isSupabaseConfigured && Object.keys(next).length > 0) {
+      if (isSupabaseConfigured) {
         saveSnapshotsToSupabase(merged).catch(() => {});
       }
 
+      hasLiveDataRef.current = true;
+      setFetchError(null);
       setLastFetchTime(new Date());
       setConnectionStatus('connected');
-    } catch {
-      setConnectionStatus('connected');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Bilinmeyen hata';
+      setFetchError(message);
+      setConnectionStatus('error');
+      console.error('[Binance]', message);
     } finally {
       isFetchingRef.current = false;
     }
@@ -245,6 +271,7 @@ export function useMarketData() {
     selectedPairId,
     setSelectedPairId,
     connectionStatus,
+    fetchError,
     lastFetchTime,
     pollIntervalSeconds: BINANCE_POLL_INTERVAL_MS / 1000,
     supabaseConfigured: isSupabaseConfigured,

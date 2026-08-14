@@ -19,18 +19,47 @@ const FIAT_BASES = new Set([
 ]);
 
 const LEVERAGED_PATTERN = /(UP|DOWN|BULL|BEAR)$/;
+const CACHE_KEY = 'binance_usdt_symbols_v1';
 
-let cachedUsdtSymbols: BinanceSymbolInfo[] | null = null;
+let memoryCache: BinanceSymbolInfo[] | null = null;
+
+function loadFromSession(): BinanceSymbolInfo[] | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { ts: number; data: BinanceSymbolInfo[] };
+    if (Date.now() - parsed.ts > 24 * 60 * 60 * 1000) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function saveToSession(data: BinanceSymbolInfo[]) {
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+  } catch {
+    /* ignore quota errors */
+  }
+}
 
 export async function getVerifiedUsdtSymbols(): Promise<BinanceSymbolInfo[]> {
-  if (cachedUsdtSymbols) return cachedUsdtSymbols;
+  if (memoryCache) return memoryCache;
+
+  const sessionData = loadFromSession();
+  if (sessionData) {
+    memoryCache = sessionData;
+    return sessionData;
+  }
 
   const response = await fetch(`${BINANCE_API_BASE}/v3/exchangeInfo`);
-  if (!response.ok) throw new Error('Binance exchangeInfo hatası');
+  if (!response.ok) {
+    throw new Error(`Binance exchangeInfo hatası: ${response.status}`);
+  }
 
   const data = await response.json();
 
-  cachedUsdtSymbols = data.symbols.filter(
+  memoryCache = data.symbols.filter(
     (s: BinanceSymbolInfo & { isSpotTradingAllowed?: boolean }) =>
       s.quoteAsset === 'USDT' &&
       s.status === 'TRADING' &&
@@ -40,7 +69,8 @@ export async function getVerifiedUsdtSymbols(): Promise<BinanceSymbolInfo[]> {
       !LEVERAGED_PATTERN.test(s.baseAsset),
   ) as BinanceSymbolInfo[];
 
-  return cachedUsdtSymbols;
+  saveToSession(memoryCache);
+  return memoryCache;
 }
 
 function buildCryptoPair(baseAsset: string, symbol: string, price: number): TradingPair {
@@ -91,4 +121,8 @@ export function buildAllCryptoSnapshots(
     const volB = (b.price.volume ?? 0) * b.price.price;
     return volB - volA;
   });
+}
+
+export function collectAllBinanceSymbols(usdtSymbols: BinanceSymbolInfo[]): string[] {
+  return [...new Set(usdtSymbols.map((s) => s.symbol))];
 }

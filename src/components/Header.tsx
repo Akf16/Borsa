@@ -6,6 +6,7 @@ interface HeaderProps {
   lastFetchTime: Date | null;
   pollIntervalSeconds: number;
   supabaseConfigured: boolean;
+  fetchError: string | null;
 }
 
 const STATUS_MESSAGES: Record<ConnectionStatus, string> = {
@@ -13,6 +14,7 @@ const STATUS_MESSAGES: Record<ConnectionStatus, string> = {
   connecting: 'Bağlantı Kuruluyor...',
   analyzing: 'Yapay Zeka Analiz Ediyor...',
   waiting: 'Mum Kapanışı Bekleniyor',
+  error: 'Veri Bağlantısı Kesildi',
 };
 
 export function Header({
@@ -20,8 +22,10 @@ export function Header({
   lastFetchTime,
   pollIntervalSeconds,
   supabaseConfigured,
+  fetchError,
 }: HeaderProps) {
   const isLive = connectionStatus === 'connected' || connectionStatus === 'analyzing';
+  const isError = connectionStatus === 'error';
 
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-bg-primary/95 backdrop-blur-md">
@@ -46,14 +50,23 @@ export function Header({
               {isLive && (
                 <span className="absolute -left-0.5 h-2 w-2 rounded-full bg-accent-green animate-pulse-live" />
               )}
+              {isError && (
+                <span className="absolute -left-0.5 h-2 w-2 rounded-full bg-accent-red" />
+              )}
               <Wifi
                 size={14}
-                className={isLive ? 'text-accent-green ml-2' : 'text-text-muted'}
+                className={
+                  isError ? 'text-accent-red ml-2' : isLive ? 'text-accent-green ml-2' : 'text-text-muted'
+                }
               />
-              <span className="text-xs font-semibold text-accent-green">CANLI</span>
+              <span
+                className={`text-xs font-semibold ${isError ? 'text-accent-red' : 'text-accent-green'}`}
+              >
+                {isError ? 'KESİK' : 'CANLI'}
+              </span>
             </div>
             <span className="hidden text-xs text-text-secondary lg:inline">
-              {STATUS_MESSAGES[connectionStatus]}
+              {fetchError ?? STATUS_MESSAGES[connectionStatus]}
               {lastFetchTime && <> · Binance {pollIntervalSeconds}sn</>}
               {supabaseConfigured && <> · Supabase ✓</>}
             </span>
